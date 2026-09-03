@@ -1,6 +1,7 @@
 /target
 /data
 /config.yaml
+/config/
 /node_modules
 **/*.sqlite
 **/*.sqlite-journal
@@ -10,3 +11,5 @@
 /CONTEXT.md
 /AGENTS.md
 /docs/adr/
+# Local lab binary push; not part of the public tree.
+/scripts/push-dist.sh

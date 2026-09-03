@@ -23,6 +23,11 @@ check:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
 
+# CLI 参数树和样例配置 smoke
+cli-smoke:
+    cargo run --quiet -p picapica -- --help
+    cargo run --quiet -p picapica -- config validate config.example.yaml
+
 # 跑测试
 test:
     cargo test --workspace
@@ -53,6 +58,14 @@ probe *args:
 it-core:
     bun test src/it/core.test.ts
 
+# Ubuntu / Fedora 文件树：签名索引哈希对照（需先 just dev）
+it-httpfs:
+    bun test src/it/httpfs.test.ts
+
+# apt / dnf 真客户端（需先 just dev，Docker context desktop-linux）
+it-clients:
+    bun test src/it/clients.test.ts
+
 # Docker 客户端端到端测试（需先 just dev，并已启动 Docker）
 it-docker:
     bun test src/it/docker-pull.test.ts
@@ -60,6 +73,8 @@ it-docker:
 # 完整集成测试
 it:
     just it-core
+    just it-httpfs
+    just it-clients
     just it-docker
 
 # 集成测试（需先 just dev）

@@ -11,5 +11,7 @@ COPY --from=build /src/target/release/picapica /usr/local/bin/picapica
 COPY config.example.yaml /etc/picapica/config.example.yaml
 WORKDIR /var/lib/picapica
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["picapica", "health", "--url", "http://127.0.0.1:8080"]
 ENTRYPOINT ["picapica"]
 CMD ["serve", "--config", "/etc/picapica/config.yaml"]

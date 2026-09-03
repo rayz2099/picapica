@@ -5,6 +5,17 @@ data_dir: "./data"
 # When unset, proxy: default is the same as direct.
 # proxy_url: "http://127.0.0.1:1080"
 probe_interval: "10m"
+# cache: false 时请求不读不写本地，只转发。默认 true。
+cache: true
+# 缓存容量和 TTL 缺省不限；TTL 以命名空间最后访问时间进行 LRU 驱逐。
+# cache_max_bytes: 107374182400
+# cache_ttl: "720h"
+# 日志级别：error / warn / info / debug / trace。缺省 info。
+# log_level: info
+# 写入 data_dir/logs，终端不再刷日志；不配则只打 stdout。
+# log_retain: "1d"
+# 对外地址，复制样例和 Docker HTTPS 域名用。host 会当作所有 docker 仓库别名。
+# public_url: "https://pica.example.com"
 api_keys:
   - "picapica"
 

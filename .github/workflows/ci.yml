@@ -1,0 +1,30 @@
+# why: PR 与分支推送共用同一质量门禁，避免合并后才发现格式、静态检查或单测失败。
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "**"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: extractions/setup-just@v2
+      - uses: Swatinem/rust-cache@v2
+      - name: Quality gate
+        run: just check
+      - name: CLI smoke
+        run: just cli-smoke

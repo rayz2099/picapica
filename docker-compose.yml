@@ -5,9 +5,17 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/etc/picapica/config.yaml
+      # why: 配置保存采用原子 rename，挂载目录才能让 WebUI 安全替换文件。
+      - ./config:/etc/picapica
       - picapica-data:/var/lib/picapica
     command: ["serve", "--config", "/etc/picapica/config.yaml"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "picapica", "health", "--url", "http://127.0.0.1:8080"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
 volumes:
   picapica-data:

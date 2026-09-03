@@ -75,13 +75,6 @@ describe("core", () => {
     expect(await head.text()).toBe("");
   }, 30000);
 
-  test("ubuntu jammy InRelease", async () => {
-    const resp = await get("/ubuntu/dists/jammy/InRelease");
-    expect(resp.status).toBe(200);
-    const text = await resp.text();
-    expect(text.includes("BEGIN PGP SIGNED MESSAGE") || text.includes("Origin:")).toBe(true);
-  }, 30000);
-
   test("control plane rejects missing and wrong tokens", async () => {
     const paths = ["/api/config", "/api/stats", "/api/probe", "/api/namespaces"];
     for (const path of paths) {

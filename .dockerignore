@@ -1,6 +1,7 @@
 /target
 /data
 /config.yaml
+/config/
 .git
 **/*.sqlite
 **/*.sqlite-journal
@@ -10,4 +11,3 @@
 /bun.lock
 /package.json
 /tsconfig.json
-

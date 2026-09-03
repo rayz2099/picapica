@@ -65,6 +65,9 @@ fn builder() -> reqwest::ClientBuilder {
     Client::builder()
         .redirect(Policy::none())
         .connect_timeout(Duration::from_secs(10))
+        // why: connect_timeout 不覆盖响应头和响应体，卡死的上游会阻断后续节点切换。
+        .read_timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(30 * 60))
         .pool_idle_timeout(Duration::from_secs(30))
         .user_agent("picapica/0.1")
 }

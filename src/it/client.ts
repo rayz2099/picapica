@@ -41,3 +41,14 @@ export function oci(path: string, init?: RequestInit): Promise<Response> {
 export function ociGet(path: string): Promise<Response> {
   return oci(path);
 }
+
+export function sha256(bytes: ArrayBuffer | Uint8Array): string {
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+  return hasher.digest("hex");
+}
+
+export async function readOk(resp: Response, label: string): Promise<ArrayBuffer> {
+  if (!resp.ok) throw new Error(`${label} HTTP ${resp.status}: ${await resp.text()}`);
+  return resp.arrayBuffer();
+}

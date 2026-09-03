@@ -1,9 +1,12 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { authed, base, requireLive } from "./client.ts";
+import { authed, base, readOk, requireLive, sha256 } from "./client.ts";
+import { run, type CommandResult } from "./proc.ts";
 
 const image = "library/redis";
 const tag = "7.4-alpine";
 const platform = "linux/amd64";
+/** why: 默认 context 是远端主机，不能作为本地 Picapica 客户端。 */
+const dockerContext = "desktop-linux";
 const accept = [
   "application/vnd.oci.image.index.v1+json",
   "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -41,12 +44,8 @@ interface ImageConfig {
   rootfs: { type: string; diff_ids: string[] };
 }
 
-interface CommandResult {
-  stdout: string;
-  stderr: string;
-}
-
 interface PortlessApp {
+  name: string;
   url: string;
   stop: () => Promise<void>;
 }
@@ -66,38 +65,8 @@ const proxyProgram = `
   });
 `;
 
-/** why: 不经 shell 拼命令，避免参数被二次解释。 */
-async function run(
-  command: string,
-  args: string[],
-  timeoutMs = 300_000,
-): Promise<CommandResult> {
-  const proc = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "pipe" });
-  const stdout = new Response(proc.stdout).text();
-  const stderr = new Response(proc.stderr).text();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      proc.kill();
-      reject(new Error(`${command} ${args[0]} 超时`));
-    }, timeoutMs);
-  });
-
-  try {
-    const code = await Promise.race([proc.exited, timeout]);
-    const result = { stdout: await stdout, stderr: await stderr };
-    if (code !== 0) {
-      const detail = [result.stdout, result.stderr].filter(Boolean).join("\n");
-      throw new Error(`${command} ${args.join(" ")} 退出 ${code}\n${detail}`);
-    }
-    return result;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
-
 function docker(args: string[]): Promise<CommandResult> {
-  return run("docker", args);
+  return run("docker", ["--context", dockerContext, ...args]);
 }
 
 function pullDigest(result: CommandResult): string {
@@ -113,10 +82,17 @@ async function inspect(ref: string): Promise<ImageInfo> {
   return JSON.parse(result.stdout.trim()) as ImageInfo;
 }
 
-/** why: Portless Funnel 同时解决远端 daemon 可达性和可信 TLS。 */
+/** why: 本地已有同名镜像时 docker pull 会跳过 blob，命名空间对象数就盖不住完整制品。 */
+async function removeLocal(ref: string): Promise<void> {
+  const listed = await docker(["images", "-q", ref]);
+  if (!listed.stdout.trim()) return;
+  await docker(["rmi", "--force", ref]);
+}
+
+/** why: Portless Tailscale Serve 让 Docker 通过 tailnet 访问，不把仓库暴露到公网。 */
 async function startPortless(targetPort: string): Promise<PortlessApp> {
   const name = `picapica-it-${process.pid}`;
-  const args = [name, "--funnel", "node", "-e", proxyProgram, targetPort];
+  const args = [name, "--tailscale", "node", "-e", proxyProgram, targetPort];
   const proc = Bun.spawn(["portless", ...args], { stdout: "pipe", stderr: "pipe" });
   const reader = proc.stdout.getReader();
   const stderr = new Response(proc.stderr).text();
@@ -151,6 +127,7 @@ async function startPortless(targetPort: string): Promise<PortlessApp> {
     }
   })();
   return {
+    name,
     url,
     stop: async () => {
       proc.kill();
@@ -161,19 +138,12 @@ async function startPortless(targetPort: string): Promise<PortlessApp> {
   };
 }
 
-function hash(bytes: ArrayBuffer): string {
-  const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(new Uint8Array(bytes));
-  return `sha256:${hasher.digest("hex")}`;
+function digestOf(bytes: ArrayBuffer): string {
+  return `sha256:${sha256(bytes)}`;
 }
 
-async function readOk(resp: Response, label: string): Promise<ArrayBuffer> {
-  if (!resp.ok) throw new Error(`${label} HTTP ${resp.status}: ${await resp.text()}`);
-  return resp.arrayBuffer();
-}
-
-/** why: Funnel 发布和 DNS/TLS 生效有短暂窗口，真实客户端只能在公网健康后进入。 */
-async function waitPublic(url: string): Promise<void> {
+/** why: Serve 发布和 DNS/TLS 生效有短暂窗口，真实客户端只能在 tailnet 健康后进入。 */
+async function waitServe(url: string): Promise<void> {
   const deadline = Date.now() + 30_000;
   let reason = "尚未请求";
   while (Date.now() < deadline) {
@@ -186,10 +156,58 @@ async function waitPublic(url: string): Promise<void> {
     }
     await Bun.sleep(250);
   }
-  throw new Error(`Portless Funnel 健康检查超时：${reason}`);
+  throw new Error(`Portless Tailscale Serve 健康检查超时：${reason}`);
 }
 
-/** why: 出站是可选配置，对照 Hub 时有 proxy_url 才带上。 */
+/** why: 状态清理完成后还要从公共接缝确认旧地址不能继续访问服务。 */
+async function waitClosed(url: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const resp = await fetch(`${url}/api/health`, {
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (!resp.ok) return;
+    } catch {
+      return;
+    }
+    await Bun.sleep(250);
+  }
+  throw new Error(`Tailscale Serve 地址仍可访问：${url}`);
+}
+
+async function stopPortless(app?: PortlessApp): Promise<void> {
+  const errors: unknown[] = [];
+  if (app) {
+    try {
+      await app.stop();
+    } catch (err) {
+      errors.push(err);
+    }
+  }
+  try {
+    await run("portless", ["proxy", "stop"], 30_000);
+  } catch (err) {
+    errors.push(err);
+  }
+  if (app) {
+    try {
+      const serve = await run("tailscale", ["serve", "status"], 30_000);
+      expect(serve.stdout.trim()).toBe("No serve config");
+      const routes = await run("portless", ["list"], 30_000);
+      expect(routes.stdout).not.toContain(app.name);
+      await waitClosed(app.url);
+      console.info(`[it-docker] Tailscale Serve closed: ${app.url}`);
+    } catch (err) {
+      errors.push(err);
+    }
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Portless/Tailscale Serve 清理失败");
+  }
+}
+
+/** why: 对照 Hub 必须用配置声明的出站；未配置时 default 等于直连，不能另猜代理。 */
 function via(proxy?: string): RequestInit {
   return proxy ? { proxy } : {};
 }
@@ -242,16 +260,23 @@ describe("docker pull", () => {
         (row) => new URL(row.url).hostname === "registry-1.docker.io",
       );
       expect(upstream?.proxy).toBe("default");
+      const proxy = cfg.proxy_url || undefined;
+
+      const repoName = repo?.name ?? "";
+      const clearPath = `/api/namespaces?repo=${encodeURIComponent(repoName)}&ns=${encodeURIComponent(image)}`;
+      const clear = await authed(clearPath, { method: "DELETE" });
+      expect(clear.status).toBe(200);
 
       const targetPort = new URL(base).port || "80";
       await run("portless", ["proxy", "start", "-p", "8443"], 30_000);
       let app: PortlessApp | undefined;
       try {
         app = await startPortless(targetPort);
-        await waitPublic(app.url);
+        await waitServe(app.url);
+        console.info(`[it-docker] Tailscale Serve: ${app.url}`);
         const registry = new URL(app.url).host;
-        const localRef = `${registry}/${repo?.name}/${image}:${tag}`;
-        const manifestPath = `/v2/${repo?.name}/${image}/manifests/${tag}`;
+        const localRef = `${registry}/${repoName}/${image}:${tag}`;
+        const manifestPath = `/v2/${repoName}/${image}/manifests/${tag}`;
         const head = await fetch(`${app.url}${manifestPath}`, {
           method: "HEAD",
           headers: { Accept: accept },
@@ -260,14 +285,14 @@ describe("docker pull", () => {
         expect(head.headers.get("docker-content-digest")).toMatch(
           /^sha256:[0-9a-f]{64}$/,
         );
+        await removeLocal(localRef);
         const localPull = await docker(["pull", "--platform", platform, localRef]);
         const digest = pullDigest(localPull);
         const local = await inspect(localRef);
 
-        const proxy = cfg.proxy_url;
         const token = await dockerToken(proxy);
         const indexBytes = await official(`manifests/${digest}`, proxy, token, true);
-        expect(hash(indexBytes)).toBe(digest);
+        expect(digestOf(indexBytes)).toBe(digest);
         const index = JSON.parse(new TextDecoder().decode(indexBytes)) as {
           manifests: IndexManifest[];
         };
@@ -283,14 +308,14 @@ describe("docker pull", () => {
           token,
           true,
         );
-        expect(hash(manifestBytes)).toBe(manifestDigest);
+        expect(digestOf(manifestBytes)).toBe(manifestDigest);
         const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as ImageManifest;
         const configBytes = await official(
           `blobs/${manifest.config.digest}`,
           proxy,
           token,
         );
-        expect(hash(configBytes)).toBe(manifest.config.digest);
+        expect(digestOf(configBytes)).toBe(manifest.config.digest);
         const config = JSON.parse(new TextDecoder().decode(configBytes)) as ImageConfig;
 
         expect(local.Id).toBe(manifest.config.digest);
@@ -300,16 +325,20 @@ describe("docker pull", () => {
         expect(local.RootFS.Layers).toEqual(config.rootfs.diff_ids);
         expect(manifest.layers.length).toBeGreaterThan(0);
 
+        const configPath = `/v2/${repoName}/${image}/blobs/${manifest.config.digest}`;
+        const localConfig = await readOk(await fetch(`${app.url}${configPath}`), configPath);
+        expect(digestOf(localConfig)).toBe(manifest.config.digest);
+
         const blobHashes = await Promise.all(
           manifest.layers.map(async (layer) => {
-            const path = `/v2/${repo?.name}/${image}/blobs/${layer.digest}`;
+            const path = `/v2/${repoName}/${image}/blobs/${layer.digest}`;
             const bytes = await readOk(await fetch(`${app.url}${path}`), path);
-            return hash(bytes);
+            return digestOf(bytes);
           }),
         );
         expect(blobHashes).toEqual(manifest.layers.map((layer) => layer.digest));
 
-        const nsPath = `/api/namespaces?q=${encodeURIComponent(image)}&repo=${encodeURIComponent(repo?.name ?? "")}`;
+        const nsPath = `/api/namespaces?q=${encodeURIComponent(image)}&repo=${encodeURIComponent(repoName)}`;
         const nsResp = await authed(nsPath);
         expect(nsResp.status).toBe(200);
         const rows = (await nsResp.json()) as {
@@ -318,11 +347,14 @@ describe("docker pull", () => {
           bytes: number;
         }[];
         const cached = rows.find((row) => row.namespace === image);
-        expect(cached?.objects).toBeGreaterThanOrEqual(manifest.layers.length + 2);
+        const unique = new Set([
+          manifest.config.digest,
+          ...manifest.layers.map((layer) => layer.digest),
+        ]);
+        expect(cached?.objects).toBeGreaterThanOrEqual(unique.size);
         expect(cached?.bytes).toBeGreaterThan(0);
       } finally {
-        if (app) await app.stop();
-        await run("portless", ["proxy", "stop"], 30_000);
+        await stopPortless(app);
       }
     },
     360_000,

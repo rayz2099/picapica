@@ -1,4 +1,4 @@
-# why: 只在 vX.Y.Z tag 发版；CI 不跑测试，产物是二进制和 GHCR 镜像。
+# why: tag 发布必须重复质量门禁，不能依赖 tag 指向的分支曾跑过 CI。
 name: release
 
 on:
@@ -49,8 +49,25 @@ jobs:
           fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
-  bin:
+  quality:
     needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: extractions/setup-just@v2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-quality
+      - name: Quality gate
+        run: just check
+      - name: CLI smoke
+        run: just cli-smoke
+
+  bin:
+    needs: [version, quality]
     name: ${{ matrix.asset }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -107,6 +124,12 @@ jobs:
       - name: Build
         shell: bash
         run: cargo build --release --target "${{ matrix.target }}" -p picapica
+      - name: Binary smoke
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        shell: bash
+        run: |
+          target/${{ matrix.target }}/release/picapica --help
+          target/${{ matrix.target }}/release/picapica config validate config.example.yaml
       - name: Pack
         shell: bash
         run: |
@@ -151,6 +174,11 @@ jobs:
         run: |
           chmod +x linux/amd64/picapica linux/arm64/picapica
       - uses: docker/setup-buildx-action@v3
+      - name: Image smoke
+        run: |
+          docker build --build-arg TARGETARCH=amd64 -f Dockerfile.release -t picapica:smoke .
+          docker run --rm picapica:smoke --help
+          docker run --rm picapica:smoke config validate /etc/picapica/config.example.yaml
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -162,8 +190,8 @@ jobs:
           file: Dockerfile.release
           platforms: linux/amd64,linux/arm64
           push: true
-          provenance: false
-          sbom: false
+          provenance: mode=max
+          sbom: true
           tags: |
             ${{ env.GHCR }}:${{ needs.version.outputs.version }}
             ${{ env.GHCR }}:latest
@@ -191,6 +219,7 @@ jobs:
         run: |
           mkdir -p dist
           find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} dist/ \;
+          (cd dist && sha256sum picapica-* > SHA256SUMS)
           ls -la dist
       - uses: softprops/action-gh-release@v2
         with:

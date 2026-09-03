@@ -31,6 +31,10 @@ impl Error {
             StatusCode::NOT_FOUND
         } else if t.contains("未授权") || t.contains("令牌") {
             StatusCode::UNAUTHORIZED
+        } else if t.contains("不允许") {
+            StatusCode::CONFLICT
+        } else if t.contains("缺少") || t.contains("非法") {
+            StatusCode::BAD_REQUEST
         } else {
             StatusCode::BAD_GATEWAY
         }
