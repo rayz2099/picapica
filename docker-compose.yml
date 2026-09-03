@@ -1,0 +1,13 @@
+services:
+  picapica:
+    image: ghcr.io/rayz2099/picapica:latest
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/picapica/config.yaml
+      - picapica-data:/var/lib/picapica
+    command: ["serve", "--config", "/etc/picapica/config.yaml"]
+
+volumes:
+  picapica-data:

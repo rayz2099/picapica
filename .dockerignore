@@ -1,0 +1,13 @@
+/target
+/data
+/config.yaml
+.git
+**/*.sqlite
+**/*.sqlite-journal
+**/*.sqlite-wal
+/node_modules
+/src/it
+/bun.lock
+/package.json
+/tsconfig.json
+

@@ -1,0 +1,12 @@
+/target
+/data
+/config.yaml
+/node_modules
+**/*.sqlite
+**/*.sqlite-journal
+**/*.sqlite-wal
+.DS_Store
+# Local domain notes; not part of the public tree.
+/CONTEXT.md
+/AGENTS.md
+/docs/adr/

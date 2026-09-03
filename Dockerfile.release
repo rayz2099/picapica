@@ -1,0 +1,12 @@
+# why: CI 已编好 linux musl 二进制，镜像里不再跑 rustc / qemu。
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ARG TARGETARCH
+COPY --chmod=755 linux/${TARGETARCH}/picapica /usr/local/bin/picapica
+COPY config.example.yaml /etc/picapica/config.example.yaml
+WORKDIR /var/lib/picapica
+EXPOSE 8080
+ENTRYPOINT ["picapica"]
+CMD ["serve", "--config", "/etc/picapica/config.yaml"]

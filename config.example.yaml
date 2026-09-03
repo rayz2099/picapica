@@ -1,0 +1,44 @@
+# Copy to config.yaml and edit. Repository names have no code defaults.
+listen: "0.0.0.0:8080"
+data_dir: "./data"
+# Optional HTTP or SOCKS5 egress for upstreams with proxy: default.
+# When unset, proxy: default is the same as direct.
+# proxy_url: "http://127.0.0.1:1080"
+probe_interval: "10m"
+api_keys:
+  - "picapica"
+
+repos:
+  - name: docker
+    type: docker
+    aliases:
+      - localhost
+      - 127.0.0.1
+    upstreams:
+      - url: "https://docker.m.daocloud.io"
+        proxy: direct
+      - url: "https://registry-1.docker.io"
+        proxy: default
+  - name: ghcr
+    type: docker
+    upstreams:
+      - url: "https://ghcr.io"
+        proxy: default
+  - name: ubuntu
+    type: ubuntu
+    upstreams:
+      - url: "https://mirrors.aliyun.com/ubuntu"
+        proxy: direct
+      - url: "https://mirrors.tuna.tsinghua.edu.cn/ubuntu"
+        proxy: direct
+      - url: "http://archive.ubuntu.com/ubuntu"
+        proxy: default
+  - name: fedora
+    type: fedora
+    upstreams:
+      - url: "https://mirrors.aliyun.com/fedora"
+        proxy: direct
+      - url: "https://mirrors.tuna.tsinghua.edu.cn/fedora"
+        proxy: direct
+      - url: "https://download.fedoraproject.org/pub/fedora/linux"
+        proxy: default

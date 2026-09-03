@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["crates/picapica", "crates/picapica-core"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+version = "0.1.0"
+repository = "https://github.com/rayz2099/picapica"
+homepage = "https://github.com/rayz2099/picapica"
+description = "Pull-through proxy for Docker, Ubuntu, and Fedora software sources"
+
+[workspace.dependencies]
+picapica-core = { path = "crates/picapica-core" }
+anyhow = "1"
+async-stream = "0.3"
+axum = { version = "0.8", features = ["macros"] }
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+futures-util = "0.3"
+hex = "0.4"
+http = "1"
+notify = "7"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks", "json"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"

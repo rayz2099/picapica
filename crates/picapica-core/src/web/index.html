@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>picapica</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon.ico" />
+  <script>
+    (() => {
+      const stored = localStorage.getItem("picapica.theme") || "system";
+      const dark =
+        stored === "dark" ||
+        (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.dataset.theme = stored;
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --raise: #ffffff;
+      --sidebar: #eef1f4;
+      --fg: #1b1c1e;
+      --muted: #6b7280;
+      --line: #e6e9ee;
+      --accent: #2563eb;
+      --ok: #0f7a4e;
+      --danger: #b42318;
+      --shadow: 0 12px 40px color-mix(in oklab, #111827 8%, transparent);
+      --sans: "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    html.dark {
+      color-scheme: dark;
+      --bg: #111214;
+      --raise: #1a1c1f;
+      --sidebar: #16181b;
+      --fg: #f4f4f5;
+      --muted: #a1a1aa;
+      --line: #2a2d32;
+      --accent: #60a5fa;
+      --ok: #5dcea0;
+      --danger: #f0a8a0;
+      --shadow: 0 12px 40px color-mix(in oklab, #111214 55%, transparent);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font: 15px/1.7 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .app { display: flex; height: 100%; min-height: 0; }
+    .sidebar {
+      width: 212px;
+      flex-shrink: 0;
+      background: var(--sidebar);
+      display: flex;
+      flex-direction: column;
+      padding: 14px 10px 12px;
+      gap: 8px;
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 12px 14px;
+    }
+    .brand strong {
+      font-size: 20px;
+      font-weight: 560;
+      letter-spacing: -0.04em;
+    }
+    .brand span { font-size: 12px; color: var(--muted); }
+    .side-link {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      border-radius: 999px;
+      padding: 10px 12px;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--fg);
+    }
+    .side-link svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .side-link:hover, .side-link.active {
+      background: color-mix(in oklab, var(--fg) 6%, transparent);
+    }
+    .side-link.active { color: var(--accent); }
+    .grow { flex: 1; }
+    .side-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding-top: 8px;
+    }
+    .workspace {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .chrome {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 28px 8px;
+    }
+    .chrome h2 { margin: 0; font-size: 22px; font-weight: 560; letter-spacing: -0.03em; }
+    .chrome p { margin: 0; color: var(--muted); font-size: 13px; }
+    main { padding: 8px 28px 32px; overflow: auto; display: grid; gap: 16px; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: var(--raise);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 16px;
+    }
+    .card b { display: block; color: var(--muted); font-weight: 500; font-size: 12px; letter-spacing: 0.04em; }
+    .card em { font-style: normal; font-size: 22px; letter-spacing: -0.04em; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+    th { color: var(--muted); font-weight: 500; }
+    .pill {
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 16px;
+      background: var(--fg);
+      color: var(--bg);
+    }
+    .ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .danger { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, var(--line)); }
+    .ok { color: var(--ok); }
+    .bad { color: var(--danger); }
+    .row { display: flex; gap: 8px; align-items: center; }
+    input, textarea, select {
+      background: var(--raise);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      outline: none;
+    }
+    input:focus, textarea:focus { border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); }
+    textarea { width: 100%; font: 13px/1.6 var(--mono); resize: vertical; }
+    .probe-grid { display: grid; gap: 12px; }
+    .probe-card h3 { margin: 0 0 10px; font-size: 15px; }
+    .up-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 10px; align-items: center; margin: 8px 0; }
+    .up-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .bar {
+      height: 6px;
+      border-radius: 99px;
+      background: var(--line);
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .bar > i {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+      border-radius: inherit;
+    }
+    .gate {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: color-mix(in oklab, var(--bg) 88%, transparent);
+    }
+    .gate[hidden] { display: none; }
+    .gate-card {
+      width: min(380px, calc(100% - 32px));
+      background: var(--raise);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: var(--shadow);
+    }
+    .gate-card h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -0.05em; }
+    .gate-card label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12px; }
+    .muted { color: var(--muted); }
+    .fields { display: grid; gap: 12px; max-width: 640px; }
+    .fields label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+    @media (max-width: 720px) {
+      .app { flex-direction: column; }
+      .sidebar { width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
+      .brand { padding: 4px 8px; }
+      .grow, .side-bottom { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <strong>picapica</strong>
+        <span>软件源代理</span>
+      </div>
+      <button type="button" class="side-link active" data-tab="dash">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z" fill="none" stroke="currentColor" stroke-width="1.8" /></svg>
+        总览
+      </button>
+      <button type="button" class="side-link" data-tab="probe">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16l5-5 4 4 7-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        测速
+      </button>
+      <button type="button" class="side-link" data-tab="cache">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M4 10h16" fill="none" stroke="currentColor" stroke-width="1.8" /></svg>
+        缓存
+      </button>
+      <button type="button" class="side-link" data-tab="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M12 3v2M12 19v2M4.9 6.5l1.5 1.5M17.6 16l1.5 1.5M3 12h2M19 12h2M4.9 17.5l1.5-1.5M17.6 8l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+        设置
+      </button>
+      <div class="grow"></div>
+      <div class="side-bottom">
+        <button type="button" class="ghost" id="theme-btn" title="主题">系统</button>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="chrome">
+        <div>
+          <h2 id="title">总览</h2>
+          <p id="lede">仓库、占用、当前最快上游</p>
+        </div>
+      </header>
+      <main>
+        <section id="dash">
+          <div class="cards" id="stats"></div>
+          <div class="card">
+            <table>
+              <thead><tr><th>仓库</th><th>类型</th><th>上游</th><th>当前最快</th></tr></thead>
+              <tbody id="repos"></tbody>
+            </table>
+          </div>
+        </section>
+        <section id="probe" hidden>
+          <div class="row"><button type="button" class="pill" id="btn-probe">开始测速</button><span class="muted" id="probe-msg"></span></div>
+          <div class="probe-grid" id="probe-out"></div>
+        </section>
+        <section id="cache" hidden>
+          <div class="row">
+            <input id="q" placeholder="搜索命名空间" />
+            <button type="button" class="pill" id="btn-search">搜索</button>
+          </div>
+          <div class="card">
+            <table>
+              <thead><tr><th>仓库</th><th>命名空间</th><th>对象</th><th>体积</th><th></th></tr></thead>
+              <tbody id="ns"></tbody>
+            </table>
+          </div>
+        </section>
+        <section id="settings" hidden>
+          <p class="muted">保存即写 YAML 并 reload。令牌只存在本机。</p>
+          <div class="fields">
+            <label>listen<input id="f-listen" /></label>
+            <label>data_dir<input id="f-data" /></label>
+            <label>proxy_url<input id="f-proxy" /></label>
+            <label>probe_interval<input id="f-interval" /></label>
+            <label>api_keys（逗号分隔）<input id="f-keys" /></label>
+          </div>
+          <label class="muted">完整配置（JSON，对应 YAML 字段）</label>
+          <textarea id="yaml" rows="18"></textarea>
+          <div class="row"><button type="button" class="pill" id="btn-save">保存</button><span id="save-msg" class="muted"></span></div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div class="gate" id="gate" hidden>
+    <form class="gate-card" id="gate-form">
+      <h1>picapica</h1>
+      <p class="muted">控制面令牌</p>
+      <label>令牌<input id="token-input" autocomplete="off" /></label>
+      <p id="gate-err" class="bad" hidden></p>
+      <button type="submit" class="pill">继续</button>
+    </form>
+  </div>
+  <script>
+    const titles = {
+      dash: ["总览", "仓库、占用、当前最快上游"],
+      probe: ["测速", "按 RTT 排序，失败的上游会排到后面"],
+      cache: ["缓存", "按命名空间搜索并删除引用"],
+      settings: ["设置", "写入同一份 YAML"]
+    };
+    const themeBtn = document.getElementById("theme-btn");
+    const labels = { system: "系统", light: "亮色", dark: "暗色" };
+
+    function applyTheme(mode) {
+      const dark = mode === "dark" || (mode !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.dataset.theme = mode;
+      localStorage.setItem("picapica.theme", mode);
+      themeBtn.textContent = labels[mode];
+    }
+    applyTheme(localStorage.getItem("picapica.theme") || "system");
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      if ((localStorage.getItem("picapica.theme") || "system") === "system") applyTheme("system");
+    });
+    themeBtn.onclick = () => {
+      const order = ["system", "light", "dark"];
+      const cur = localStorage.getItem("picapica.theme") || "system";
+      applyTheme(order[(order.indexOf(cur) + 1) % 3]);
+    };
+
+    let token = localStorage.getItem("picapica_token") || "";
+    function headers() {
+      return { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+    }
+    async function api(path, opt) {
+      const r = await fetch(path, Object.assign({ headers: headers() }, opt || {}));
+      if (r.status === 401) {
+        showGate("令牌无效");
+        throw new Error("未授权");
+      }
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+    function showGate(msg) {
+      document.getElementById("gate").hidden = false;
+      const err = document.getElementById("gate-err");
+      err.hidden = !msg;
+      err.textContent = msg || "";
+    }
+    document.getElementById("gate-form").onsubmit = (ev) => {
+      ev.preventDefault();
+      token = document.getElementById("token-input").value.trim();
+      localStorage.setItem("picapica_token", token);
+      document.getElementById("gate").hidden = true;
+      refresh().catch((e) => showGate(e.message));
+    };
+
+    function tab(id) {
+      document.querySelectorAll("main > section").forEach((s) => { s.hidden = s.id !== id; });
+      document.querySelectorAll(".side-link").forEach((b) => b.classList.toggle("active", b.dataset.tab === id));
+      document.getElementById("title").textContent = titles[id][0];
+      document.getElementById("lede").textContent = titles[id][1];
+    }
+    document.querySelectorAll(".side-link").forEach((b) => { b.onclick = () => tab(b.dataset.tab); });
+
+    function fmtBytes(n) {
+      const x = Number(n) || 0;
+      if (x < 1024) return x + " B";
+      if (x < 1048576) return (x / 1024).toFixed(1) + " KB";
+      if (x < 1073741824) return (x / 1048576).toFixed(1) + " MB";
+      return (x / 1073741824).toFixed(2) + " GB";
+    }
+
+    async function refresh() {
+      const [st, cfg, ranks] = await Promise.all([api("/api/stats"), api("/api/config"), api("/api/probe")]);
+      document.getElementById("stats").innerHTML =
+        [["制品", st.artifacts], ["体积", fmtBytes(st.bytes)], ["引用", st.refs], ["仓库", st.repos]]
+          .map(([k, v]) => "<div class=\"card\"><b>" + k + "</b><em>" + v + "</em></div>").join("");
+      document.getElementById("repos").innerHTML = cfg.repos.map((r) => {
+        const best = (ranks[r.name] || []).find((x) => x.ok);
+        const fast = best ? best.url + " <span class=\"ok\">" + best.rtt_ms + "ms</span>" : "—";
+        return "<tr><td>" + r.name + "</td><td>" + r.type + "</td><td>" + r.upstreams.length + "</td><td>" + fast + "</td></tr>";
+      }).join("");
+      document.getElementById("f-listen").value = cfg.listen;
+      document.getElementById("f-data").value = cfg.data_dir;
+      document.getElementById("f-proxy").value = cfg.proxy_url || "";
+      document.getElementById("f-interval").value = cfg.probe_interval;
+      document.getElementById("f-keys").value = (cfg.api_keys || []).join(",");
+      document.getElementById("yaml").value = JSON.stringify(cfg, null, 2);
+      renderProbe(ranks);
+    }
+
+    function renderProbe(ranks) {
+      const root = document.getElementById("probe-out");
+      const names = Object.keys(ranks || {});
+      if (!names.length) {
+        root.innerHTML = "<p class=\"muted\">还没有测速结果</p>";
+        return;
+      }
+      root.innerHTML = names.map((name) => {
+        const rows = ranks[name] || [];
+        const max = Math.max.apply(null, rows.map((r) => r.rtt_ms || 1));
+        const body = rows.map((r) => {
+          const pct = r.ok ? Math.max(8, Math.round((1 - (r.rtt_ms || max) / (max * 1.15)) * 100)) : 0;
+          const rtt = r.ok ? r.rtt_ms + "ms" : "失败";
+          return "<div class=\"up-row\"><div><div class=\"up-url\">" + r.url + "</div><div class=\"bar\"><i style=\"width:" + pct + "%\"></i></div></div><div class=\"" + (r.ok ? "ok" : "bad") + "\">" + rtt + "</div></div>";
+        }).join("");
+        return "<div class=\"card probe-card\"><h3>" + name + "</h3>" + body + "</div>";
+      }).join("");
+    }
+
+    document.getElementById("btn-probe").onclick = async () => {
+      document.getElementById("probe-msg").textContent = "测速中…";
+      const r = await api("/api/probe", { method: "POST" });
+      document.getElementById("probe-msg").textContent = "";
+      renderProbe(r);
+      refresh();
+    };
+    document.getElementById("btn-search").onclick = async () => {
+      const q = document.getElementById("q").value;
+      const rows = await api("/api/namespaces?q=" + encodeURIComponent(q));
+      document.getElementById("ns").innerHTML = rows.map((r) =>
+        "<tr><td>" + r.repo + "</td><td>" + r.namespace + "</td><td>" + r.objects + "</td><td>" + fmtBytes(r.bytes) + "</td><td><button type=\"button\" class=\"ghost danger\" data-repo=\"" + r.repo + "\" data-ns=\"" + r.namespace + "\">删除</button></td></tr>"
+      ).join("");
+      document.querySelectorAll("#ns button").forEach((b) => {
+        b.onclick = async () => {
+          if (!confirm("删除 " + b.dataset.ns + " ？")) return;
+          await api("/api/namespaces?repo=" + encodeURIComponent(b.dataset.repo) + "&ns=" + encodeURIComponent(b.dataset.ns), { method: "DELETE" });
+          b.closest("tr").remove();
+        };
+      });
+    };
+    document.getElementById("btn-save").onclick = async () => {
+      try {
+        const cfg = JSON.parse(document.getElementById("yaml").value);
+        cfg.listen = document.getElementById("f-listen").value;
+        cfg.data_dir = document.getElementById("f-data").value;
+        cfg.proxy_url = document.getElementById("f-proxy").value;
+        cfg.probe_interval = document.getElementById("f-interval").value;
+        cfg.api_keys = document.getElementById("f-keys").value.split(",").map((s) => s.trim()).filter(Boolean);
+        await api("/api/config", { method: "PUT", body: JSON.stringify(cfg) });
+        document.getElementById("save-msg").textContent = "已保存";
+        refresh();
+      } catch (e) {
+        document.getElementById("save-msg").textContent = e.message;
+      }
+    };
+
+    if (!token) showGate("");
+    else refresh().catch((e) => showGate(e.message));
+  </script>
+</body>
+</html>

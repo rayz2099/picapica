@@ -1,0 +1,11 @@
+{
+  "name": "picapica",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test src/it"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.4"
+  }
+}
