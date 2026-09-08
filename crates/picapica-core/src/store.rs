@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 
 mod maintenance;
+mod versions;
 
 pub use maintenance::{PruneReport, ReconcileReport, StorageStatus};
 
@@ -322,6 +323,67 @@ impl Store {
         Ok(removed)
     }
 
+    /// why: 只拆指定 tag/版本指针；digest 钉和其它 tag 必须留下，否则删 latest 会清掉整镜像。
+    pub fn delete_version(&self, repo: &str, ns: &str, version: &str) -> Result<u64> {
+        if version.is_empty() {
+            return Err(Error::msg("缺少版本"));
+        }
+        let _lifecycle = self.lifecycle.lock().expect("lifecycle");
+        let db = self.db.lock().expect("db");
+        let names: Vec<String> = {
+            let mut stmt =
+                db.prepare("SELECT name FROM refs WHERE repo=?1 AND namespace=?2 ORDER BY name")?;
+            let rows = stmt.query_map(params![repo, ns], |r| r.get::<_, String>(0))?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            out
+        };
+        let targets = versions::ref_names_for_version(&names, version);
+        if targets.is_empty() {
+            return Err(Error::msg(format!("找不到版本 {version}")));
+        }
+        let mut digests = std::collections::HashSet::new();
+        for name in &targets {
+            let digest: Option<String> = db
+                .query_row(
+                    "SELECT digest FROM refs WHERE repo=?1 AND namespace=?2 AND name=?3",
+                    params![repo, ns, name],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(digest) = digest {
+                digests.insert(digest);
+            }
+            db.execute(
+                "DELETE FROM refs WHERE repo=?1 AND namespace=?2 AND name=?3",
+                params![repo, ns, name],
+            )?;
+        }
+        let mut removed = 0u64;
+        for d in digests {
+            let refs: i64 = db.query_row(
+                "SELECT COUNT(*) FROM refs WHERE digest=?1",
+                params![d],
+                |r| r.get(0),
+            )?;
+            db.execute(
+                "UPDATE artifacts SET refs=?2 WHERE digest=?1",
+                params![d, refs],
+            )?;
+            if refs == 0 {
+                let path = self.blob_path(&d)?;
+                if path.exists() {
+                    std::fs::remove_file(&path)?;
+                }
+                db.execute("DELETE FROM artifacts WHERE digest=?1", params![d])?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     pub fn namespace_count(&self, repo: &str) -> Result<i64> {
         let db = self.db.lock().expect("db");
         let n: i64 = db.query_row(
@@ -334,16 +396,14 @@ impl Store {
 
     pub fn tags(&self, repo: &str, ns: &str) -> Result<Vec<String>> {
         let db = self.db.lock().expect("db");
-        let mut stmt = db.prepare(
-            "SELECT name FROM refs WHERE repo=?1 AND namespace=?2 AND name LIKE 'tag:%' AND name NOT LIKE 'tag:sha256:%' ORDER BY name",
-        )?;
+        let mut stmt =
+            db.prepare("SELECT name FROM refs WHERE repo=?1 AND namespace=?2 ORDER BY name")?;
         let rows = stmt.query_map(params![repo, ns], |r| r.get::<_, String>(0))?;
-        let mut out = Vec::new();
+        let mut names = Vec::new();
         for r in rows {
-            let name = r?;
-            out.push(name.trim_start_matches("tag:").to_string());
+            names.push(r?);
         }
-        Ok(out)
+        Ok(versions::versions_from_names(&names))
     }
 
     /// why: 树按 / 展开命名空间，分页的是当前层子节点，不是底层制品。
@@ -865,5 +925,64 @@ mod tests {
 
         assert!(err.to_string().contains("制品不存在"));
         assert_eq!(store.stats().expect("读取统计"), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn tree_leaf_shows_human_tag_and_package_version() {
+        let dir = TestDir::new();
+        let store = Store::open(&dir.0).expect("打开存储");
+        let digest = store.write_blob(b"pkg").await.expect("写制品");
+        store
+            .put_tag("docker", "library/postgres", "16", &digest)
+            .expect("写入 tag");
+        store
+            .put_tag("docker", "library/postgres", &digest, &digest)
+            .expect("写入 digest 钉");
+        store
+            .put_file(
+                "docker-ce",
+                "dists/jammy/pool/stable/amd64/docker-ce_29.6.2-1%7eubuntu.22.04%7ejammy_amd64.deb",
+                &digest,
+            )
+            .expect("写入软件包");
+
+        let docker = store.tree("docker", "library", 1, 50).expect("docker 树");
+        assert_eq!(docker.entries[0].tags, vec!["16".to_string()]);
+
+        let ce = store
+            .tree("docker-ce", "dists/jammy", 1, 50)
+            .expect("docker-ce 树");
+        assert_eq!(
+            ce.entries[0].tags,
+            vec!["29.6.2-1~ubuntu.22.04~jammy".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_version_keeps_other_tags_and_digest_pin() {
+        let dir = TestDir::new();
+        let store = Store::open(&dir.0).expect("打开存储");
+        let digest = store.write_blob(b"manifest").await.expect("写制品");
+        store
+            .put_tag("docker", "library/postgres", "latest", &digest)
+            .expect("latest");
+        store
+            .put_tag("docker", "library/postgres", "16", &digest)
+            .expect("16");
+        store
+            .put_tag("docker", "library/postgres", &digest, &digest)
+            .expect("digest 钉");
+        store
+            .delete_version("docker", "library/postgres", "latest")
+            .expect("删 latest");
+        assert_eq!(
+            store.tags("docker", "library/postgres").expect("读 tag"),
+            vec!["16".to_string()]
+        );
+        assert!(store.has_digest(&digest).expect("制品仍在"));
+        let err = store
+            .delete_version("docker", "library/postgres", "latest")
+            .expect_err("重复删除必须失败");
+        assert!(err.to_string().contains("找不到版本"));
     }
 }

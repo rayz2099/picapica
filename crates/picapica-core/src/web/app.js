@@ -770,28 +770,28 @@ class App {
 
   treeRow(entry, isSelf) {
     const name = (isSelf ? this.tx("thisLevel") + " · " : "") + entry.name;
-    const tags = el("td", {});
-    for (const tag of entry.tags || []) tags.append(el("span", { className: "chip", text: tag }), " ");
-    const actions = el("td", { className: "toolbar" });
-    if (entry.deeper || (!entry.leaf && entry.namespace)) {
-      const open = el("button", { type: "button", className: "ghost", text: this.tx("open") });
-      open.addEventListener("click", () => this.go("repos", this.treeRepo, entry.namespace));
-      actions.append(open);
+    const chips = el("div", { className: "chip-list" });
+    for (const tag of entry.tags || []) {
+      chips.append(el("span", { className: "chip-item" },
+        el("span", { className: "chip", text: tag }),
+        el("button", { type: "button", className: "chip-del", title: this.tx("delTag", { ns: entry.namespace, tag }), "aria-label": this.tx("removeTag", { tag }), onClick: () => this.delTag(entry.namespace, tag) }, "×")));
     }
-    let chk = el("td", {});
+    const tools = el("div", { className: "row-actions" });
+    if (entry.deeper || (!entry.leaf && entry.namespace)) {
+      tools.append(el("button", { type: "button", className: "ghost", text: this.tx("open"), onClick: () => this.go("repos", this.treeRepo, entry.namespace) }));
+    }
+    let chk = el("td", { className: "check" });
     if (entry.leaf) {
-      chk = el("td", {}, el("input", { type: "checkbox", className: "ns-chk", value: entry.namespace }));
-      const del = el("button", { type: "button", className: "danger", text: this.tx("delete") });
-      del.addEventListener("click", () => this.delNs(entry.namespace));
-      actions.append(del);
+      chk = el("td", { className: "check" }, el("input", { type: "checkbox", className: "ns-chk", value: entry.namespace }));
+      tools.append(el("button", { type: "button", className: "danger", text: this.tx("delete"), onClick: () => this.delNs(entry.namespace) }));
     }
     return el("tr", {},
       chk,
-      el("td", {}, el("span", { className: "path", text: name })),
-      el("td", { text: String(entry.objects) }),
-      el("td", { text: fmtBytes(entry.bytes) }),
-      tags,
-      actions,
+      el("td", { className: "name-cell" }, el("span", { className: "path", text: name })),
+      el("td", { className: "number", text: String(entry.objects) }),
+      el("td", { className: "number", text: fmtBytes(entry.bytes) }),
+      el("td", {}, chips),
+      el("td", {}, tools),
     );
   }
 
@@ -816,14 +816,22 @@ class App {
     this.toastTimer = setTimeout(() => { node.hidden = true; }, 1600);
   }
 
-  async delNs(ns) {
-    if (!await this.ask(this.tx("delNs", { ns }))) return;
+  async deleteNs(q, confirm, page) {
+    if (!await this.ask(confirm)) return;
     try {
-      await this.api.call("/api/namespaces?repo=" + encodeURIComponent(this.treeRepo) + "&ns=" + encodeURIComponent(ns), { method: "DELETE" });
-      await this.openTree(this.treeRepo, this.treePrefix, this.treePage);
+      await this.api.call("/api/namespaces?repo=" + encodeURIComponent(this.treeRepo) + "&" + q, { method: "DELETE" });
+      await this.openTree(this.treeRepo, this.treePrefix, page);
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  delNs(ns) {
+    return this.deleteNs("ns=" + encodeURIComponent(ns), this.tx("delNs", { ns }), this.treePage);
+  }
+
+  delTag(ns, tag) {
+    return this.deleteNs("ns=" + encodeURIComponent(ns) + "&tag=" + encodeURIComponent(tag), this.tx("delTag", { ns, tag }), this.treePage);
   }
 
   async delSelected() {
@@ -840,16 +848,10 @@ class App {
     }
   }
 
-  async delLevel() {
+  delLevel() {
     const prefix = this.treePrefix;
     const label = prefix ? this.treeRepo + "/" + prefix : this.treeRepo;
-    if (!await this.ask(this.tx("delLevel", { label }))) return;
-    try {
-      await this.api.call("/api/namespaces?repo=" + encodeURIComponent(this.treeRepo) + "&prefix=" + encodeURIComponent(prefix), { method: "DELETE" });
-      await this.openTree(this.treeRepo, this.treePrefix, 1);
-    } catch (e) {
-      this.fail(e);
-    }
+    return this.deleteNs("prefix=" + encodeURIComponent(prefix), this.tx("delLevel", { label }), 1);
   }
 
   openDrawer(repo) {

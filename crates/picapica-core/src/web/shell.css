@@ -270,6 +270,48 @@ th, td {
   font-size: 13px;
   vertical-align: top;
 }
+.tree-ledger { overflow-x: auto; }
+.tree-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 920px;
+}
+.tree-table .col-check { width: 4.5rem; }
+.tree-table .col-name { width: 22%; }
+.tree-table .col-num { width: 8.5rem; }
+.tree-table .col-ver { width: auto; }
+.tree-table .col-act { width: 7.5rem; }
+.tree-table th,
+.tree-table td {
+  vertical-align: middle;
+  padding: 20px 24px;
+}
+.tree-table th:nth-child(1),
+.tree-table td:nth-child(1) {
+  padding-left: 24px;
+  padding-right: 16px;
+  text-align: center;
+}
+.tree-table th:nth-child(3),
+.tree-table td:nth-child(3),
+.tree-table th:nth-child(4),
+.tree-table td:nth-child(4) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-left: 28px;
+  padding-right: 28px;
+}
+.tree-table th:nth-child(6),
+.tree-table td:nth-child(6) {
+  text-align: right;
+  padding-right: 24px;
+  white-space: nowrap;
+}
+.tree-table .name-cell { overflow-wrap: anywhere; }
+.tree-table tbody tr:hover td {
+  background: color-mix(in oklab, var(--fg) 4%, transparent);
+}
 th {
   color: var(--muted);
   font-weight: 600;
@@ -298,6 +340,12 @@ tr:last-child td { border-bottom: 0; }
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+#tree-view .toolbar { margin: 8px 0 16px; }
+#tree-view .path#crumb {
+  margin: 8px 0 12px;
+  gap: 10px;
+  font-size: 14px;
 }
 
 .pill, .ghost, .danger {
@@ -351,6 +399,51 @@ html.dark .pill.danger { color: #16181b; }
   padding: 2px 8px;
   font-family: var(--mono);
   font-size: 11px;
+}
+.chip-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--chip);
+  border-radius: 999px;
+  padding: 2px 2px 2px 10px;
+}
+.chip-item .chip {
+  background: transparent;
+  padding: 4px 2px 4px 0;
+}
+.chip-del {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+.chip-del:hover,
+.chip-del:focus-visible {
+  background: color-mix(in oklab, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+.chip-del:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-height: 1.25em;
+}
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
 }
 .muted { color: var(--muted); }
 .ok { color: var(--ok); }

@@ -14,6 +14,7 @@ pub struct NsQuery {
     pub repo: Option<String>,
     pub ns: Option<String>,
     pub prefix: Option<String>,
+    pub tag: Option<String>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
 }
@@ -214,6 +215,11 @@ pub async fn delete_ns(
     let cfg = app.snapshot().await;
     app.check_token(bearer(&headers), &cfg)?;
     let repo = q.repo.ok_or_else(|| Error::msg("缺少 repo"))?;
+    if let Some(tag) = q.tag.as_deref() {
+        let ns = q.ns.ok_or_else(|| Error::msg("缺少 ns"))?;
+        let n = app.store.delete_version(&repo, &ns, tag)?;
+        return Ok((StatusCode::OK, Json(serde_json::json!({ "removed": n }))));
+    }
     if q.prefix.is_some() {
         let prefix = q.prefix.unwrap_or_default();
         let n = app.store.delete_prefix(&repo, &prefix)?;

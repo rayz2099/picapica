@@ -93,8 +93,14 @@ enum CacheCmd {
     Ls { query: Option<String> },
     /// 浏览仓库缓存树
     Tree(TreeArgs),
-    /// 删除一个缓存命名空间的引用
-    Rm { repo: String, namespace: String },
+    /// 删除一个缓存命名空间的引用；带 --tag 则只删该版本指针
+    Rm {
+        repo: String,
+        namespace: String,
+        /// why: 只摘一个 tag/版本，避免 rm 命名空间把镜像层一起清掉。
+        #[arg(long)]
+        tag: Option<String>,
+    },
     /// 前缀级缓存操作
     Prefix {
         #[command(subcommand)]
@@ -225,18 +231,16 @@ async fn main() -> Result<()> {
                     .await?,
                 );
             }
-            CacheCmd::Rm { repo, namespace } => {
-                print_json(
-                    ctl(
-                        &cli,
-                        "/api/namespaces",
-                        Method::DELETE,
-                        &[("repo", repo.as_str()), ("ns", namespace.as_str())],
-                        None,
-                        true,
-                    )
-                    .await?,
-                );
+            CacheCmd::Rm {
+                repo,
+                namespace,
+                tag,
+            } => {
+                let mut query = vec![("repo", repo.as_str()), ("ns", namespace.as_str())];
+                if let Some(tag) = tag {
+                    query.push(("tag", tag.as_str()));
+                }
+                print_json(ctl(&cli, "/api/namespaces", Method::DELETE, &query, None, true).await?);
             }
             CacheCmd::Prefix { cmd } => match cmd {
                 PrefixCmd::Rm { repo, prefix } => {

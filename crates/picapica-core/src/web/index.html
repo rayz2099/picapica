@@ -116,15 +116,23 @@
               <button type="button" class="danger" id="btn-del-all" data-i18n="deleteLevel">Delete this level</button>
               <span class="muted" id="tree-msg"></span>
             </div>
-            <div class="ledger">
-              <table>
+            <div class="ledger tree-ledger">
+              <table class="tree-table">
+                <colgroup>
+                  <col class="col-check" />
+                  <col class="col-name" />
+                  <col class="col-num" />
+                  <col class="col-num" />
+                  <col class="col-ver" />
+                  <col class="col-act" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th><input type="checkbox" id="chk-all" /></th>
+                    <th class="check"><input type="checkbox" id="chk-all" /></th>
                     <th data-i18n="name">Name</th>
                     <th data-i18n="objects">Objects</th>
                     <th data-i18n="size">Size</th>
-                    <th data-i18n="tags">Tags</th>
+                    <th data-i18n="tags">Version</th>
                     <th></th>
                   </tr>
                 </thead>

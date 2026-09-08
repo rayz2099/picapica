@@ -9,7 +9,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex as StdMutex, Weak};
 use tokio::sync::{Mutex, RwLock};
 
 pub struct App {
@@ -19,6 +19,7 @@ pub struct App {
     pub egress: RwLock<Egress>,
     pub ranks: RwLock<HashMap<String, Vec<ProbeRow>>>,
     pub inflight: Mutex<HashMap<String, Weak<Mutex<()>>>>,
+    tag_hints: StdMutex<HashMap<String, Vec<String>>>,
     transfers: TransferRegistry,
     reload_error: RwLock<Option<String>>,
     metrics: Metrics,
@@ -40,6 +41,10 @@ pub struct MetricsSnapshot {
     pub bytes_served: u64,
 }
 
+fn hint_key(repo: &str, name: &str, digest: &str) -> String {
+    format!("{repo}\0{name}\0{digest}")
+}
+
 impl App {
     pub fn boot(config_path: PathBuf) -> Result<Arc<Self>> {
         let cfg = Config::load_or_seed(&config_path)?;
@@ -52,6 +57,7 @@ impl App {
             egress: RwLock::new(egress),
             ranks: RwLock::new(HashMap::new()),
             inflight: Mutex::new(HashMap::new()),
+            tag_hints: StdMutex::new(HashMap::new()),
             transfers: TransferRegistry::default(),
             reload_error: RwLock::new(None),
             metrics: Metrics::default(),
@@ -166,6 +172,42 @@ impl App {
         let weak = Arc::downgrade(&lock);
         g.insert(digest.to_string(), weak);
         lock
+    }
+
+    /// why: containerd 先 HEAD tag 再按 digest 拉 manifest，必须把可变指针记下来，落地后才能写回人类 tag。
+    pub fn note_tag(&self, repo: &str, name: &str, reference: &str, digest: &str) -> Result<()> {
+        if reference.starts_with("sha256:") {
+            return Ok(());
+        }
+        if self.store.has_digest(digest)? {
+            return self.store.put_tag(repo, name, reference, digest);
+        }
+        let key = hint_key(repo, name, digest);
+        let mut hints = self.tag_hints.lock().expect("tag_hints");
+        if hints.len() >= 4096 {
+            hints.clear();
+        }
+        let tags = hints.entry(key).or_default();
+        if !tags.iter().any(|tag| tag == reference) {
+            tags.push(reference.to_string());
+        }
+        Ok(())
+    }
+
+    /// why: digest 引用负责计数和树节点；同一摘要上若有 HEAD 记下的 tag，要一并写成可变指针。
+    pub fn bind_digest(&self, repo: &str, name: &str, digest: &str) -> Result<()> {
+        self.store.put_tag(repo, name, digest, digest)?;
+        let key = hint_key(repo, name, digest);
+        let tags = self
+            .tag_hints
+            .lock()
+            .expect("tag_hints")
+            .remove(&key)
+            .unwrap_or_default();
+        for tag in tags {
+            self.store.put_tag(repo, name, &tag, digest)?;
+        }
+        Ok(())
     }
 
     pub fn check_token(&self, presented: Option<&str>, cfg: &Config) -> Result<()> {
@@ -427,5 +469,54 @@ mod tests {
         let locks = app.inflight.lock().await;
         assert!(!locks.contains_key("sha256:a"));
         assert!(locks.contains_key("sha256:b"));
+    }
+
+    #[tokio::test]
+    async fn note_tag_writes_immediately_when_digest_exists() {
+        let dir = TestDir::new();
+        let path = dir.0.join("config.yaml");
+        config(&dir).save(&path).expect("save initial");
+        let app = App::boot(path).expect("boot");
+        let digest = app.store.write_blob(b"manifest").await.expect("写制品");
+        app.note_tag("docker", "library/postgres", "16", &digest)
+            .expect("补 tag");
+        assert_eq!(
+            app.store
+                .tags("docker", "library/postgres")
+                .expect("读 tag"),
+            vec!["16".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn bind_digest_applies_hint_after_blob_arrives() {
+        use sha2::{Digest, Sha256};
+        let dir = TestDir::new();
+        let path = dir.0.join("config.yaml");
+        config(&dir).save(&path).expect("save initial");
+        let app = App::boot(path).expect("boot");
+        let bytes = b"manifest-body";
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let digest = format!("sha256:{}", hex::encode(hasher.finalize()));
+        app.note_tag("docker", "library/postgres", "latest", &digest)
+            .expect("记下 tag");
+        assert!(app
+            .store
+            .tags("docker", "library/postgres")
+            .expect("读 tag")
+            .is_empty());
+        app.store
+            .persist_bytes(&digest, bytes)
+            .await
+            .expect("落下制品");
+        app.bind_digest("docker", "library/postgres", &digest)
+            .expect("绑定 digest");
+        assert_eq!(
+            app.store
+                .tags("docker", "library/postgres")
+                .expect("读 tag"),
+            vec!["latest".to_string()]
+        );
     }
 }

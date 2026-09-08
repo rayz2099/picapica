@@ -106,7 +106,7 @@ async fn manifest(
         app.store.blob_path(reference)?;
         if caching && app.store.has_digest(reference)? {
             app.record_cache_hit();
-            app.store.put_tag(&repo.name, &name, reference, reference)?;
+            app.bind_digest(&repo.name, &name, reference)?;
             if method == Method::HEAD {
                 return serve_file_head(&app, reference, true).await;
             }
@@ -137,7 +137,7 @@ async fn manifest(
         verify_body_digest(reference, &body)?;
         if caching {
             app.store.persist_bytes(reference, &body).await?;
-            app.store.put_tag(&repo.name, &name, reference, reference)?;
+            app.bind_digest(&repo.name, &name, reference)?;
         }
         return serve_bytes_digest(&app, body, reference, true);
     }
@@ -146,6 +146,11 @@ async fn manifest(
         let Pulled::Value(meta) = meta else {
             return rejected_response(meta, "MANIFEST_UNKNOWN");
         };
+        if caching {
+            if let Some(digest) = meta.digest.as_deref() {
+                app.note_tag(&repo.name, &name, reference, digest)?;
+            }
+        }
         return head_response(&meta, None, true);
     }
     if !caching {
@@ -175,7 +180,7 @@ async fn blob(
     if req.method() == Method::HEAD {
         if caching && app.store.has_digest(digest)? {
             app.record_cache_hit();
-            app.store.put_tag(&repo.name, &name, digest, digest)?;
+            app.bind_digest(&repo.name, &name, digest)?;
             return serve_file_head(&app, digest, false).await;
         }
         if caching {
@@ -192,7 +197,7 @@ async fn blob(
     }
     if app.store.has_digest(digest)? {
         app.record_cache_hit();
-        app.store.put_tag(&repo.name, &name, digest, digest)?;
+        app.bind_digest(&repo.name, &name, digest)?;
         return serve_file(&app, digest, false, req.headers()).await;
     }
     app.record_cache_miss();
@@ -203,7 +208,7 @@ async fn blob(
     let digest_lock = app.digest_lock(digest).await;
     let _g = digest_lock.lock().await;
     if app.store.has_digest(digest)? {
-        app.store.put_tag(&repo.name, &name, digest, digest)?;
+        app.bind_digest(&repo.name, &name, digest)?;
         return serve_file(&app, digest, false, req.headers()).await;
     }
     let pulled = fetch_blob(&app, &repo, &name, digest, req.headers()).await?;
@@ -786,8 +791,7 @@ async fn pull_blob(
         Err(e) => return Err(e),
     };
     transfer.flush(size)?;
-    let linked = app.store.put_tag(&repo.name, name, digest, &got);
-    linked?;
+    app.bind_digest(&repo.name, name, &got)?;
     Ok(Pulled::Value(()))
 }
 
