@@ -5,6 +5,10 @@ set shell := ["bash", "-cu"]
 default:
     @just --list
 
+# 只清 cargo 产物, data/blobs 是运行时缓存不在这里动
+clean:
+    cargo clean
+
 # 调试编译
 compile:
     cargo build -p picapica
